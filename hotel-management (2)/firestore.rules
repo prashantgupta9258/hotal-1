@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: categories
+    // Fields: id (string), name (string)
+    //
+    // Collection: menu
+    // Fields: id (string), name (string), description (string), price (number), categoryId (string), image (string), isAvailable (boolean)
+    //
+    // Collection: orders
+    // Fields: id (string), customerName (string), tableNumber (string), items (array), totalPrice (number), status (string), createdAt (timestamp)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "prashantgupta9258@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100;
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['name', 'price', 'categoryId']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.price is number && data.price >= 0 &&
+             data.categoryId is string;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['customerName', 'tableNumber', 'items', 'totalPrice', 'status', 'timestamp']) &&
+             data.customerName is string && data.customerName.size() > 0 &&
+             data.tableNumber is string &&
+             data.items is list &&
+             data.totalPrice is number &&
+             data.status in ['Pending', 'Preparing', 'Ready', 'Delivered', 'Cancelled'];
+    }
+
+    // Categories: Publicly readable, Admin writable
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCategory(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // Menu: Publicly readable, Admin writable
+    match /menu/{menuItemId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidMenuItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // Orders: Anyone can create, Anyone can read (for tracking), Admin can update status
+    match /orders/{orderId} {
+      allow read: if true; // In a real app, we might restrict this, but for tracking we allow it
+      allow create: if isValidOrder(request.resource.data);
+      allow update: if (isAdmin() || (resource.data.status in ['Pending', 'Preparing'] && request.resource.data.status in ['Pending', 'Cancelled'])) && isValidOrder(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}
